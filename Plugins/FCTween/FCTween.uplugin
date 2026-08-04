@@ -1,0 +1,27 @@
+{
+	"FileVersion": 3,
+	"Version": 4,
+	"VersionName": "1.4",
+	"FriendlyName": "FCTween",
+	"Description": "A tweening library with C++ and Blueprint support",
+	"Category": "Animation",
+	"CreatedBy": "Jared Cook",
+	"CreatedByURL": "https://www.freshcookedgames.com/",
+	"DocsURL": "https://github.com/jdcook/fresh_cooked_tweens",
+	"FabURL": "com.epicgames.launcher://ue/Fab/product/8d37a3cd-b7d1-4796-9d9e-b160a52192f8",
+	"SupportURL": "",
+	"EngineVersion": "5.7.0",
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "FCTween",
+			"Type": "Runtime",
+			"LoadingPhase": "PreDefault",
+			"PlatformAllowList": [
+				"Win64",
+				"Android",
+				"Linux"
+			]
+		}
+	]
+}
