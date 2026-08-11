@@ -74,9 +74,24 @@ protected:
 public:
 
 	/** Tells the NPC to process a projectile impact */
-	void ProjectileImpact(const FVector& ForwardVector);
+	virtual void ProjectileImpact(const FVector& ForwardVector);
+
+	/** Stun status flag */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Stun")
+	bool bStunned = false;
+
+	/** Applies the lasso stun for a duration */
+	virtual void ApplyLassoStun(float Duration);
 
 protected:
+	/** Restores the NPC from the stun state */
+	virtual void EndLassoStun();
+
+	/** Timer handle for stun duration */
+	FTimerHandle StunTimerHandle;
+
+	/** Backup of original walk speed before stun */
+	float OriginalWalkSpeed = 200.0f;
 
 	/** Called from timer to complete the destruction process for this NPC */
 	void DeferredDestroy();

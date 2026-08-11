@@ -21,12 +21,12 @@ ATwinStickSpawner::ATwinStickSpawner()
 
 void ATwinStickSpawner::BeginPlay()
 {
-	Super::BeginPlay();
-	
 	if (NPCPool && NPCClass)
 	{
 		NPCPool->actorTemplate = NPCClass;
 	}
+
+	Super::BeginPlay();
 	
 	// find the recast navmesh actor on the level
 	TArray<AActor*> ActorList;

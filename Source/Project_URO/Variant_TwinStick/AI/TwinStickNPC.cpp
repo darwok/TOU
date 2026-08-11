@@ -176,6 +176,17 @@ void ATwinStickNPC::OnReturnedToPool_Implementation()
 	// 1. Clear destruction timer
 	GetWorld()->GetTimerManager().ClearTimer(DestructionTimer);
 
+	// Clear stun state and timer
+	if (bStunned)
+	{
+		GetWorld()->GetTimerManager().ClearTimer(StunTimerHandle);
+		bStunned = false;
+		if (GetCharacterMovement())
+		{
+			GetCharacterMovement()->MaxWalkSpeed = OriginalWalkSpeed;
+		}
+	}
+
 	// 2. Stop AI Controller logic
 	if (AAIController* AIC = Cast<AAIController>(GetController()))
 	{
@@ -192,6 +203,61 @@ void ATwinStickNPC::OnReturnedToPool_Implementation()
 		if (ATwinStickGameMode* GM = Cast<ATwinStickGameMode>(GetWorld()->GetAuthGameMode()))
 		{
 			GM->DecreaseNPCs();
+		}
+	}
+}
+
+void ATwinStickNPC::ApplyLassoStun(float Duration)
+{
+	if (bHit)
+	{
+		return;
+	}
+
+	bStunned = true;
+
+	// Pause AI Logic
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		if (UBrainComponent* BrainComp = AIC->GetBrainComponent())
+		{
+			BrainComp->PauseLogic(TEXT("Stunned by Lasso"));
+		}
+	}
+
+	// Halt movement
+	if (GetCharacterMovement())
+	{
+		OriginalWalkSpeed = GetCharacterMovement()->MaxWalkSpeed;
+		GetCharacterMovement()->MaxWalkSpeed = 0.0f;
+		GetCharacterMovement()->Velocity = FVector::ZeroVector;
+	}
+
+	// Start stun timer
+	GetWorld()->GetTimerManager().SetTimer(StunTimerHandle, this, &ATwinStickNPC::EndLassoStun, Duration, false);
+}
+
+void ATwinStickNPC::EndLassoStun()
+{
+	if (!bStunned)
+	{
+		return;
+	}
+
+	bStunned = false;
+
+	// Restore movement
+	if (GetCharacterMovement())
+	{
+		GetCharacterMovement()->MaxWalkSpeed = OriginalWalkSpeed;
+	}
+
+	// Resume AI Logic
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		if (UBrainComponent* BrainComp = AIC->GetBrainComponent())
+		{
+			BrainComp->ResumeLogic(TEXT("Stun recovered"));
 		}
 	}
 }

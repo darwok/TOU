@@ -16,6 +16,14 @@ class ATwinStickAoEAttack;
 class ATwinStickProjectile;
 class UActorPool;
 
+UENUM(BlueprintType)
+enum class EWeaponMode : uint8
+{
+	Standard,
+	Shotgun,    // S-Gun (Triple Shot)
+	MachineGun  // M-Gun (Rapid Fire)
+};
+
 /**
  *  A player-controlled character for a Twin Stick Shooter game
  *  Automatically rotates to face the aim direction.
@@ -63,6 +71,14 @@ protected:
 	/** AoE attack input action */
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* AoEAction;
+
+	/** Look input action */
+	UPROPERTY(EditAnywhere, Category="Input")
+	UInputAction* LookAction;
+
+	/** Lasso input action */
+	UPROPERTY(EditAnywhere, Category="Input")
+	UInputAction* LassoAction;
 
 	/** Trace channel to use for mouse aim */
 	UPROPERTY(EditAnywhere, Category="Input")
@@ -112,6 +128,12 @@ protected:
 	/** If true, the player is using mouse aim */
 	bool bUsingMouse = false;
 
+	/** If true, the player is shooting */
+	bool bIsShooting = false;
+
+	/** Last time the player shot a projectile */
+	float LastFireTime = 0.0f;
+
 	/** Last held move input */
 	FVector2D LastMoveInput;
 
@@ -124,6 +146,33 @@ protected:
 
 	/** Timer to handle stick autofire */
 	FTimerHandle AutoFireTimer;
+
+	// --- Lasso Properties ---
+	UPROPERTY(EditAnywhere, Category="Lasso", meta = (ClampMin = 100))
+	float LassoRange = 1000.0f;
+
+	UPROPERTY(EditAnywhere, Category="Lasso", meta = (ClampMin = 0.5))
+	float LassoCooldown = 4.0f;
+
+	UPROPERTY(EditAnywhere, Category="Lasso", meta = (ClampMin = 0.1, ClampMax = 5.0))
+	float LassoStunDuration = 2.5f;
+
+	bool bLassoOnCooldown = false;
+	FTimerHandle LassoCooldownTimerHandle;
+
+	// --- Dash Invulnerability ---
+	UPROPERTY(EditAnywhere, Category="Dash", meta = (ClampMin = 0.1, ClampMax = 2.0))
+	float DashDuration = 0.35f;
+
+	bool bIsDashing = false;
+	FTimerHandle DashTimerHandle;
+
+	// --- Weapon Mode Properties ---
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Weapons")
+	EWeaponMode CurrentWeaponMode = EWeaponMode::Standard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Weapons")
+	int32 WeaponAmmo = 0;
 
 public:
 	
@@ -163,8 +212,14 @@ protected:
 	/** Performs a dash */
 	void Dash(const FInputActionValue& Value);
 
+	/** Handles looking around */
+	void Look(const FInputActionValue& Value);
+
 	/** Shoots projectiles */
 	void Shoot(const FInputActionValue& Value);
+
+	/** Stops shooting */
+	void EndShoot(const FInputActionValue& Value);
 
 	/** Performs an AoE Attack */
 	void AoEAttack(const FInputActionValue& Value);
@@ -191,6 +246,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Input")
 	void DoAoEAttack();
 
+	/** Handles lasso input from both input actions and touch interface */
+	UFUNCTION(BlueprintCallable, Category="Input")
+	void DoLasso();
+
 public:
 
 	/** Applies collision impact to the player */
@@ -207,7 +266,24 @@ public:
 	/** Gives the player a pickup item */
 	void AddPickup();
 
+	/** Upgrades the player's weapon mode with ammo */
+	UFUNCTION(BlueprintCallable, Category="Weapons")
+	void UpgradeWeapon(EWeaponMode NewMode, int32 InitialAmmo);
+
 protected:
+
+	/** Event triggered when the player throws the lasso */
+	UFUNCTION(BlueprintImplementableEvent, Category="Lasso")
+	void BP_OnLassoThrown(FVector Start, FVector End, bool bHitEnemy);
+
+	/** Callback when Lasso input action is triggered */
+	void Lasso(const FInputActionValue& Value);
+
+	/** Resets Lasso cooldown */
+	void ResetLassoCooldown();
+
+	/** Callback when Dash duration timer expires to remove invulnerability */
+	void EndDash();
 
 	/** Updates the items counter on the Game Mode */
 	void UpdateItems();

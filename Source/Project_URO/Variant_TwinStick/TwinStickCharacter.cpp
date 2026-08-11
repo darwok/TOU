@@ -14,6 +14,7 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Pooling/ActorPool.h"
+#include "AI/TwinStickNPC.h"
 
 ATwinStickCharacter::ATwinStickCharacter()
 {
@@ -23,46 +24,64 @@ ATwinStickCharacter::ATwinStickCharacter()
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("Spring Arm"));
 	SpringArm->SetupAttachment(RootComponent);
 
-	SpringArm->SetRelativeRotation(FRotator(-50.0f, 0.0f, 0.0f));
+	SpringArm->SetRelativeRotation(FRotator(-15.0f, 0.0f, 0.0f));
 
-	SpringArm->TargetArmLength = 2200.0f;
-	SpringArm->bDoCollisionTest = false;
-	SpringArm->bInheritYaw = false;
+	SpringArm->TargetArmLength = 400.0f;
+	SpringArm->bDoCollisionTest = true;
+	SpringArm->bInheritYaw = true;
+	SpringArm->bInheritPitch = true;
+	SpringArm->bInheritRoll = true;
+	SpringArm->bUsePawnControlRotation = true;
 	SpringArm->bEnableCameraLag = true;
-	SpringArm->CameraLagSpeed = 0.5f;
+	SpringArm->CameraLagSpeed = 3.0f;
 
 	// create the camera
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm);
 
 	Camera->SetFieldOfView(75.0f);
+	Camera->bUsePawnControlRotation = false;
 
 	// create the projectile pool
 	ProjectilePool = CreateDefaultSubobject<UActorPool>(TEXT("ProjectilePool"));
 	ProjectilePool->defaultSize = 20;
 
+	// Don't rotate character to camera direction
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+
 	// configure the character movement
 	GetCharacterMovement()->GravityScale = 1.5f;
 	GetCharacterMovement()->MaxAcceleration = 1000.0f;
 	GetCharacterMovement()->BrakingFrictionFactor = 1.0f;
-	GetCharacterMovement()->bCanWalkOffLedges = false;
+	GetCharacterMovement()->bCanWalkOffLedges = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 640.0f, 0.0f);
-	GetCharacterMovement()->bConstrainToPlane = true;
-	GetCharacterMovement()->bSnapToPlaneAtStart = true;
+	GetCharacterMovement()->bConstrainToPlane = false;
+	GetCharacterMovement()->bSnapToPlaneAtStart = false;
+	GetCharacterMovement()->bOrientRotationToMovement = true;
 }
 
 void ATwinStickCharacter::BeginPlay()
 {
-	Super::BeginPlay();
-	
 	// Initialize projectile pool template
 	if (ProjectilePool && ProjectileClass)
 	{
 		ProjectilePool->actorTemplate = ProjectileClass;
 	}
 
+	Super::BeginPlay();
+
 	// update the items count
 	UpdateItems();
+
+	// Hide mouse cursor and capture input for 3rd person camera look controls
+	if (PlayerController)
+	{
+		PlayerController->SetShowMouseCursor(false);
+		FInputModeGameOnly InputMode;
+		PlayerController->SetInputMode(InputMode);
+	}
 }
 
 void ATwinStickCharacter::EndPlay(EEndPlayReason::Type EndPlayReason)
@@ -85,37 +104,14 @@ void ATwinStickCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// get the current rotation
-	const FRotator OldRotation = GetActorRotation();
-
-	// are we aiming with the mouse?
-	if (bUsingMouse)
+	// In Third Person, we smoothly rotate to face the camera direction if shooting or aiming
+	if ((bIsShooting || bAutoFireActive) && PlayerController)
 	{
-		if (PlayerController)
-		{
-			// get the cursor world location
-			FHitResult OutHit; 
-			PlayerController->GetHitResultUnderCursorByChannel(MouseAimTraceChannel, true, OutHit);
-
-			// find the aim rotation 
-			const FRotator AimRot = UKismetMathLibrary::FindLookAtRotation(GetActorLocation(), OutHit.Location);
-
-			// save the aim angle
-			AimAngle = AimRot.Yaw;
-
-			
-
-			// update the yaw, reuse the pitch and roll
-			SetActorRotation(FRotator(OldRotation.Pitch, AimAngle, OldRotation.Roll));
-
-		}
-
-	} else {
-
-		// use quaternion interpolation to blend between our current rotation
-		// and the desired aim rotation using the shortest path
-		const FRotator TargetRot = FRotator(OldRotation.Pitch, AimAngle, OldRotation.Roll);
-
+		FRotator ControlRot = GetControlRotation();
+		ControlRot.Pitch = 0.0f;
+		ControlRot.Roll = 0.0f;
+		
+		FRotator TargetRot = FMath::RInterpTo(GetActorRotation(), ControlRot, DeltaTime, AimRotationInterpSpeed);
 		SetActorRotation(TargetRot);
 	}
 }
@@ -127,16 +123,20 @@ void ATwinStickCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 	// set up the enhanced input action bindings
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::Move);
+		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::Look);
 		EnhancedInputComponent->BindAction(StickAimAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::StickAim);
 		EnhancedInputComponent->BindAction(MouseAimAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::MouseAim);
 		EnhancedInputComponent->BindAction(DashAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::Dash);
 		EnhancedInputComponent->BindAction(ShootAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::Shoot);
+		EnhancedInputComponent->BindAction(ShootAction, ETriggerEvent::Completed, this, &ATwinStickCharacter::EndShoot);
 		EnhancedInputComponent->BindAction(AoEAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::AoEAttack);
 
+		if (LassoAction)
+		{
+			EnhancedInputComponent->BindAction(LassoAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::Lasso);
+		}
 	}
-
 }
 
 void ATwinStickCharacter::Move(const FInputActionValue& Value)
@@ -159,14 +159,8 @@ void ATwinStickCharacter::StickAim(const FInputActionValue& Value)
 
 void ATwinStickCharacter::MouseAim(const FInputActionValue& Value)
 {
-	// raise the mouse controls flag
+	// In third person, we don't show the mouse cursor
 	bUsingMouse = true;
-
-	// show the mouse cursor
-	if (PlayerController)
-	{
-		PlayerController->SetShowMouseCursor(true);
-	}
 }
 
 void ATwinStickCharacter::Dash(const FInputActionValue& Value)
@@ -175,10 +169,29 @@ void ATwinStickCharacter::Dash(const FInputActionValue& Value)
 	DoDash();
 }
 
+void ATwinStickCharacter::Look(const FInputActionValue& Value)
+{
+	// get the input vector
+	FVector2D LookAxisVector = Value.Get<FVector2D>();
+
+	if (Controller != nullptr)
+	{
+		// add yaw and pitch input to controller
+		AddControllerYawInput(LookAxisVector.X);
+		AddControllerPitchInput(LookAxisVector.Y);
+	}
+}
+
 void ATwinStickCharacter::Shoot(const FInputActionValue& Value)
 {
+	bIsShooting = true;
 	// route the input
 	DoShoot();
+}
+
+void ATwinStickCharacter::EndShoot(const FInputActionValue& Value)
+{
+	bIsShooting = false;
 }
 
 void ATwinStickCharacter::AoEAttack(const FInputActionValue& Value)
@@ -196,6 +209,7 @@ void ATwinStickCharacter::DoMove(float AxisX, float AxisY)
 	// calculate the forward component of the input
 	FRotator FlatRot = GetControlRotation();
 	FlatRot.Pitch = 0.0f;
+	FlatRot.Roll = 0.0f;
 
 	// apply the forward input
 	AddMovementInput(FlatRot.RotateVector(FVector::ForwardVector), AxisX);
@@ -206,9 +220,6 @@ void ATwinStickCharacter::DoMove(float AxisX, float AxisY)
 
 void ATwinStickCharacter::DoAim(float AxisX, float AxisY)
 {
-	// calculate the aim angle from the inputs
-	AimAngle = FMath::RadiansToDegrees(FMath::Atan2(AxisY, -AxisX));
-
 	// lower the mouse controls flag
 	bUsingMouse = false;
 
@@ -227,8 +238,9 @@ void ATwinStickCharacter::DoAim(float AxisX, float AxisY)
 		// fire a projectile
 		DoShoot();
 
-		// schedule autofire cooldown reset
-		GetWorld()->GetTimerManager().SetTimer(AutoFireTimer, this, &ATwinStickCharacter::ResetAutoFire, AutoFireDelay, false);
+		// schedule autofire cooldown reset (Machine Gun has faster auto fire)
+		float CurrentDelay = (CurrentWeaponMode == EWeaponMode::MachineGun) ? 0.08f : AutoFireDelay;
+		GetWorld()->GetTimerManager().SetTimer(AutoFireTimer, this, &ATwinStickCharacter::ResetAutoFire, CurrentDelay, false);
 	}
 }
 
@@ -242,6 +254,10 @@ void ATwinStickCharacter::DoDash()
 
 	// launch the character in the chosen direction
 	LaunchCharacter(LaunchDir * DashImpulse, true, true);
+
+	// Dash invulnerability
+	bIsDashing = true;
+	GetWorld()->GetTimerManager().SetTimer(DashTimerHandle, this, &ATwinStickCharacter::EndDash, DashDuration, false);
 }
 
 void ATwinStickCharacter::DoShoot()
@@ -251,6 +267,24 @@ void ATwinStickCharacter::DoShoot()
 		return;
 	}
 
+	// Enforce fire rate cooldown
+	float CurrentTime = GetWorld()->GetTimeSeconds();
+	float FireDelay = (CurrentWeaponMode == EWeaponMode::MachineGun) ? 0.08f : 0.22f;
+	if (CurrentTime - LastFireTime < FireDelay)
+	{
+		return;
+	}
+	LastFireTime = CurrentTime;
+
+	// In Third Person, rotate the character to match the camera/controller yaw before shooting
+	if (PlayerController)
+	{
+		FRotator ControlRot = GetControlRotation();
+		ControlRot.Pitch = 0.0f;
+		ControlRot.Roll = 0.0f;
+		SetActorRotation(ControlRot);
+	}
+
 	// get the actor transform
 	FTransform ProjectileTransform = GetActorTransform();
 
@@ -258,12 +292,46 @@ void ATwinStickCharacter::DoShoot()
 	FVector ProjectileLocation = ProjectileTransform.GetLocation() + ProjectileTransform.GetRotation().RotateVector(FVector::ForwardVector * ProjectileOffset);
 	ProjectileTransform.SetLocation(ProjectileLocation);
 
-	// Get actor from pool instead of spawning
-	AActor* PooledActor = ProjectilePool->GetActorFromPool(ProjectileLocation, ProjectileTransform.Rotator());
-	if (ATwinStickProjectile* Projectile = Cast<ATwinStickProjectile>(PooledActor))
+	if (CurrentWeaponMode == EWeaponMode::Shotgun)
 	{
-		// Set owning pool on the projectile
-		Projectile->OwningPool = ProjectilePool;
+		// S-Gun: Triple spread shot
+		FRotator BaseRot = ProjectileTransform.Rotator();
+		float SpreadAngle = 15.0f;
+
+		float Angles[3] = { -SpreadAngle, 0.0f, SpreadAngle };
+		for (int32 i = 0; i < 3; ++i)
+		{
+			FRotator BulletRot = BaseRot;
+			BulletRot.Yaw += Angles[i];
+
+			AActor* PooledActor = ProjectilePool->GetActorFromPool(ProjectileLocation, BulletRot);
+			if (ATwinStickProjectile* Projectile = Cast<ATwinStickProjectile>(PooledActor))
+			{
+				Projectile->OwningPool = ProjectilePool;
+			}
+		}
+
+		WeaponAmmo--;
+	}
+	else
+	{
+		// Standard or MachineGun: Single shot
+		AActor* PooledActor = ProjectilePool->GetActorFromPool(ProjectileLocation, ProjectileTransform.Rotator());
+		if (ATwinStickProjectile* Projectile = Cast<ATwinStickProjectile>(PooledActor))
+		{
+			Projectile->OwningPool = ProjectilePool;
+		}
+
+		if (CurrentWeaponMode == EWeaponMode::MachineGun)
+		{
+			WeaponAmmo--;
+		}
+	}
+
+	// Return to Standard weapon if upgraded ammo is depleted
+	if (CurrentWeaponMode != EWeaponMode::Standard && WeaponAmmo <= 0)
+	{
+		CurrentWeaponMode = EWeaponMode::Standard;
 	}
 }
 
@@ -295,6 +363,12 @@ void ATwinStickCharacter::DoAoEAttack()
 
 void ATwinStickCharacter::HandleDamage(float Damage, const FVector& DamageDirection)
 {
+	// Ignore damage if player is currently dashing (Dodge Roll)
+	if (bIsDashing)
+	{
+		return;
+	}
+
 	// calculate the knockback vector
 	FVector LaunchVector = DamageDirection;
 	LaunchVector.Z = 0.0f;
@@ -313,6 +387,68 @@ void ATwinStickCharacter::AddPickup()
 
 	// update the items counter
 	UpdateItems();
+}
+
+void ATwinStickCharacter::UpgradeWeapon(EWeaponMode NewMode, int32 InitialAmmo)
+{
+	CurrentWeaponMode = NewMode;
+	WeaponAmmo = InitialAmmo;
+}
+
+void ATwinStickCharacter::Lasso(const FInputActionValue& Value)
+{
+	DoLasso();
+}
+
+void ATwinStickCharacter::DoLasso()
+{
+	if (bLassoOnCooldown)
+	{
+		return;
+	}
+
+	FVector StartLoc = GetActorLocation() + FVector(0.0f, 0.0f, 50.0f);
+	FVector EndLoc = StartLoc + GetActorForwardVector() * LassoRange;
+
+	FHitResult HitResult;
+	FCollisionQueryParams TraceParams;
+	TraceParams.AddIgnoredActor(this);
+
+	// Trace to see if we hit an NPC
+	bool bHit = GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		StartLoc,
+		EndLoc,
+		ECC_Pawn,
+		TraceParams
+	);
+
+	bool bStunnedEnemy = false;
+	if (bHit && HitResult.GetActor())
+	{
+		if (ATwinStickNPC* NPC = Cast<ATwinStickNPC>(HitResult.GetActor()))
+		{
+			NPC->ApplyLassoStun(LassoStunDuration);
+			bStunnedEnemy = true;
+		}
+	}
+
+	// Trigger visual rope/effect in BP
+	BP_OnLassoThrown(StartLoc, EndLoc, bStunnedEnemy);
+
+	// Put lasso on cooldown
+	bLassoOnCooldown = true;
+	GetWorld()->GetTimerManager().SetTimer(LassoCooldownTimerHandle, this, &ATwinStickCharacter::ResetLassoCooldown, LassoCooldown, false);
+}
+
+void ATwinStickCharacter::ResetLassoCooldown()
+{
+	bLassoOnCooldown = false;
+}
+
+void ATwinStickCharacter::EndDash()
+{
+	bIsDashing = false;
 }
 
 void ATwinStickCharacter::UpdateItems()

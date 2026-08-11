@@ -40,8 +40,19 @@ void ATwinStickPickup::NotifyActorBeginOverlap(AActor* OtherActor)
 	// have we overlapped the player character?
 	if (ATwinStickCharacter* PlayerCharacter = Cast<ATwinStickCharacter>(OtherActor))
 	{
-		// give the pickup to the player
-		PlayerCharacter->AddPickup();
+		// Check pickup type
+		if (PickupType == EPickupType::BombItem)
+		{
+			PlayerCharacter->AddPickup();
+		}
+		else if (PickupType == EPickupType::SGun)
+		{
+			PlayerCharacter->UpgradeWeapon(EWeaponMode::Shotgun, AmmoAmount);
+		}
+		else if (PickupType == EPickupType::MGun)
+		{
+			PlayerCharacter->UpgradeWeapon(EWeaponMode::MachineGun, AmmoAmount);
+		}
 
 		// destroy this pickup
 		Destroy();
