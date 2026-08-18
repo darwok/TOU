@@ -61,6 +61,8 @@ protected:
 
 public:
 
+	ATwinStickGameMode();
+
 	/** Gameplay initialization */
 	virtual void BeginPlay() override;
 
@@ -68,6 +70,10 @@ public:
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
 
 public:
+
+	/** Returns the decal pool component */
+	UFUNCTION(BlueprintCallable, Category = "Pooling")
+	class UActorPool* GetDecalPool() const { return DecalPool; }
 
 	/** Called when an item has been used */
 	void ItemUsed(int32 Value);
@@ -99,4 +105,14 @@ public:
 
 	/** Decreases the NPC count */
 	void DecreaseNPCs();
+
+protected:
+
+	/** Class of Decal Actor to spawn in the pool */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pooling")
+	TSubclassOf<AActor> DecalClass;
+
+	/** Decal pool component */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pooling", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class UActorPool> DecalPool;
 };

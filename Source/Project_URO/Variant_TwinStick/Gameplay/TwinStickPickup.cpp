@@ -53,6 +53,10 @@ void ATwinStickPickup::NotifyActorBeginOverlap(AActor* OtherActor)
 		{
 			PlayerCharacter->UpgradeWeapon(EWeaponMode::MachineGun, AmmoAmount);
 		}
+		else if (PickupType == EPickupType::LGun)
+		{
+			PlayerCharacter->UpgradeWeapon(EWeaponMode::Laser, AmmoAmount);
+		}
 
 		// destroy this pickup
 		Destroy();

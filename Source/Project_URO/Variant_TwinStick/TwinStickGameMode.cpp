@@ -6,9 +6,29 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Pooling/ActorPool.h"
+#include "UI/TwinStickHUD.h"
+
+ATwinStickGameMode::ATwinStickGameMode()
+{
+	// Establish the C++ HUD class as default
+	HUDClass = ATwinStickHUD::StaticClass();
+
+	// Instantiate the Decal Pool component
+	DecalPool = CreateDefaultSubobject<UActorPool>(TEXT("DecalPool"));
+	DecalPool->defaultSize = 30;
+}
 
 void ATwinStickGameMode::BeginPlay()
 {
+	// Initialize Decal Pool template
+	if (DecalPool && DecalClass)
+	{
+		DecalPool->actorTemplate = DecalClass;
+	}
+
+	Super::BeginPlay();
+
 	// create the UI widget if it hasn't already
 	CreateUI();
 }
@@ -51,9 +71,25 @@ void ATwinStickGameMode::CreateUI()
 	if(UIWidget)
 		return;
 
-	// create the UI widget and add it to the viewport
-	UIWidget = CreateWidget<UTwinStickUI>(UGameplayStatics::GetPlayerController(GetWorld(), 0), UIWidgetClass);
-	UIWidget->AddToViewport(0);
+	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	if (PC)
+	{
+		// Try to query the HUD first (ATwinStickHUD)
+		if (ATwinStickHUD* TwinHUD = Cast<ATwinStickHUD>(PC->GetHUD()))
+		{
+			UIWidget = TwinHUD->GetUIWidget();
+		}
+
+		// Fallback: spawn and add widget directly if HUD is not found or not initialized
+		if (!UIWidget)
+		{
+			UIWidget = CreateWidget<UTwinStickUI>(PC, UIWidgetClass);
+			if (UIWidget)
+			{
+				UIWidget->AddToViewport(0);
+			}
+		}
+	}
 }
 
 void ATwinStickGameMode::ComboUpdate()

@@ -14,7 +14,8 @@ enum class EPickupType : uint8
 {
 	BombItem,
 	SGun,
-	MGun
+	MGun,
+	LGun
 };
 
 /**

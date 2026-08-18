@@ -60,4 +60,19 @@ protected:
 	/** Timer handle for managing lifespan without using InitialLifeSpan */
 	FTimerHandle LifeSpanTimerHandle;
 
+	/** Material de decal a utilizar en el impacto */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decals")
+	TObjectPtr<UMaterialInterface> DecalMaterial;
+
+	/** Tamaño del decal de impacto */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decals")
+	FVector DecalSize = FVector(128.0f, 32.0f, 32.0f);
+
+	/** Duración (tiempo de vida) del decal */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decals")
+	float DecalLifeSpan = 5.0f;
+
+	/** Bandera interna para evitar duplicación de decals en una misma activación */
+	bool bDecalSpawned = false;
+
 };

@@ -21,7 +21,8 @@ enum class EWeaponMode : uint8
 {
 	Standard,
 	Shotgun,    // S-Gun (Triple Shot)
-	MachineGun  // M-Gun (Rapid Fire)
+	MachineGun, // M-Gun (Rapid Fire)
+	Laser       // L-Gun (Raycast Laser)
 };
 
 /**
@@ -290,4 +291,21 @@ protected:
 
 	/** Resets stick the aim autofire flag after the autofire timer has expired */
 	void ResetAutoFire();
+
+protected:
+	/** Decal Material to use for Laser shots */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decals")
+	TObjectPtr<UMaterialInterface> LaserDecalMaterial;
+
+	/** Size of the Laser decal */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decals")
+	FVector LaserDecalSize = FVector(128.0f, 32.0f, 32.0f);
+
+	/** Lifespan of the Laser decal */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decals")
+	float LaserDecalLifeSpan = 5.0f;
+
+	/** Event triggered when player shoots laser */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Weapons")
+	void BP_OnLaserShot(FVector Start, FVector End, bool bHit);
 };

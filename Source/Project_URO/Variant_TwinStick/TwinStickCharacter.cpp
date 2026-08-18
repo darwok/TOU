@@ -15,6 +15,7 @@
 #include "TimerManager.h"
 #include "Pooling/ActorPool.h"
 #include "AI/TwinStickNPC.h"
+#include "Pooling/PooledDecalActor.h"
 
 ATwinStickCharacter::ATwinStickCharacter()
 {
@@ -238,8 +239,16 @@ void ATwinStickCharacter::DoAim(float AxisX, float AxisY)
 		// fire a projectile
 		DoShoot();
 
-		// schedule autofire cooldown reset (Machine Gun has faster auto fire)
-		float CurrentDelay = (CurrentWeaponMode == EWeaponMode::MachineGun) ? 0.08f : AutoFireDelay;
+		// schedule autofire cooldown reset (Machine Gun and Laser have custom auto fire rates)
+		float CurrentDelay = AutoFireDelay;
+		if (CurrentWeaponMode == EWeaponMode::MachineGun)
+		{
+			CurrentDelay = 0.08f;
+		}
+		else if (CurrentWeaponMode == EWeaponMode::Laser)
+		{
+			CurrentDelay = 0.15f;
+		}
 		GetWorld()->GetTimerManager().SetTimer(AutoFireTimer, this, &ATwinStickCharacter::ResetAutoFire, CurrentDelay, false);
 	}
 }
@@ -269,7 +278,16 @@ void ATwinStickCharacter::DoShoot()
 
 	// Enforce fire rate cooldown
 	float CurrentTime = GetWorld()->GetTimeSeconds();
-	float FireDelay = (CurrentWeaponMode == EWeaponMode::MachineGun) ? 0.08f : 0.22f;
+	float FireDelay = 0.22f;
+	if (CurrentWeaponMode == EWeaponMode::MachineGun)
+	{
+		FireDelay = 0.08f;
+	}
+	else if (CurrentWeaponMode == EWeaponMode::Laser)
+	{
+		FireDelay = 0.15f;
+	}
+
 	if (CurrentTime - LastFireTime < FireDelay)
 	{
 		return;
@@ -292,7 +310,63 @@ void ATwinStickCharacter::DoShoot()
 	FVector ProjectileLocation = ProjectileTransform.GetLocation() + ProjectileTransform.GetRotation().RotateVector(FVector::ForwardVector * ProjectileOffset);
 	ProjectileTransform.SetLocation(ProjectileLocation);
 
-	if (CurrentWeaponMode == EWeaponMode::Shotgun)
+	if (CurrentWeaponMode == EWeaponMode::Laser)
+	{
+		// Raycast Laser shoot
+		FVector StartLocation = ProjectileLocation;
+		FVector Direction = ProjectileTransform.GetRotation().GetForwardVector();
+		FVector EndLocation = StartLocation + Direction * 2000.0f; // 2000 cm range
+
+		FHitResult HitResult;
+		FCollisionQueryParams TraceParams;
+		TraceParams.AddIgnoredActor(this);
+
+		bool bHit = GetWorld()->LineTraceSingleByChannel(
+			HitResult,
+			StartLocation,
+			EndLocation,
+			ECC_Visibility,
+			TraceParams
+		);
+
+		// Trigger Blueprint event for laser beam representation
+		BP_OnLaserShot(StartLocation, bHit ? HitResult.ImpactPoint : EndLocation, bHit);
+
+		if (bHit)
+		{
+			if (!LaserDecalMaterial)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("TwinStickCharacter: LaserDecalMaterial no está asignado en el Blueprint."));
+			}
+
+			// If we hit an NPC, apply damage
+			if (ATwinStickNPC* NPC = Cast<ATwinStickNPC>(HitResult.GetActor()))
+			{
+				NPC->ProjectileImpact(Direction);
+			}
+
+			// Spawn impact decal from pool
+			if (ATwinStickGameMode* GM = Cast<ATwinStickGameMode>(GetWorld()->GetAuthGameMode()))
+			{
+				if (UActorPool* DecalPool = GM->GetDecalPool())
+				{
+					// Orient projection INTO the wall surface using (-HitResult.ImpactNormal)
+					FRotator DecalRotation = (-HitResult.ImpactNormal).Rotation();
+					DecalRotation.Roll = FMath::RandRange(0.0f, 360.0f);
+
+					AActor* PooledActor = DecalPool->GetActorFromPool(HitResult.ImpactPoint, DecalRotation);
+					if (APooledDecalActor* DecalActor = Cast<APooledDecalActor>(PooledActor))
+					{
+						DecalActor->OwningPool = DecalPool;
+						DecalActor->InitDecal(LaserDecalMaterial, LaserDecalSize, LaserDecalLifeSpan);
+					}
+				}
+			}
+		}
+
+		WeaponAmmo--;
+	}
+	else if (CurrentWeaponMode == EWeaponMode::Shotgun)
 	{
 		// S-Gun: Triple spread shot
 		FRotator BaseRot = ProjectileTransform.Rotator();
