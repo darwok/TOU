@@ -429,17 +429,19 @@ void ATwinStickCharacter::DoShoot()
 	}
 	else if (CurrentWeaponMode == EWeaponMode::Shotgun)
 	{
-		// S-Gun: Triple spread shot
-		FRotator BaseRot = ProjectileTransform.Rotator();
-		float SpreadAngle = 15.0f;
+		// S-Gun: Disparo de perdigones con dispersión realista
+		FVector BaseDirection = ProjectileTransform.GetRotation().GetForwardVector();
 
-		float Angles[3] = { -SpreadAngle, 0.0f, SpreadAngle };
-		for (int32 i = 0; i < 3; ++i)
+		// Cono de dispersión de 4 grados (lo mantiene cerrado hacia el objetivo)
+		float ConeHalfAngle = FMath::DegreesToRadians(4.0f);
+
+		// Disparamos 5 perdigones para mejorar el Gamefeel de la escopeta
+		for (int32 i = 0; i < 5; ++i)
 		{
-			FRotator BulletRot = BaseRot;
-			BulletRot.Yaw += Angles[i];
+			// VRandCone calcula una trayectoria aleatoria dentro del ángulo asignado
+			FVector RandomDir = FMath::VRandCone(BaseDirection, ConeHalfAngle);
 
-			AActor* PooledActor = ProjectilePool->GetActorFromPool(ProjectileLocation, BulletRot);
+			AActor* PooledActor = ProjectilePool->GetActorFromPool(ProjectileLocation, RandomDir.Rotation());
 			if (ATwinStickProjectile* Projectile = Cast<ATwinStickProjectile>(PooledActor))
 			{
 				Projectile->OwningPool = ProjectilePool;
@@ -510,7 +512,7 @@ void ATwinStickCharacter::HandleDamage(float Damage, const FVector& DamageDirect
 	if (Lives > 0)
 	{
 		// Aún hay vidas: Aplicar knockback para dar feedback
-		FVector LaunchVector = DamageDirection;
+		FVector LaunchVector = DamageDirection; 
 		LaunchVector.Z = 0.0f;
 		LaunchCharacter(LaunchVector * KnockbackStrength, true, true);
 
