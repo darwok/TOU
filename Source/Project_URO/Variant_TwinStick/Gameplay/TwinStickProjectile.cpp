@@ -70,6 +70,11 @@ void ATwinStickProjectile::OnProjectileStop(const FHitResult& ImpactResult)
 
 void ATwinStickProjectile::OnActivatedFromPool_Implementation()
 {
+	if (GetOwner())
+	{
+		CollisionSphere->IgnoreActorWhenMoving(GetOwner(), true);
+	}
+
 	// Reset/activate projectile movement
 	if (ProjectileMovement)
 	{

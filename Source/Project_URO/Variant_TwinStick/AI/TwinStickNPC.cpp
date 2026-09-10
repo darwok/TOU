@@ -34,7 +34,7 @@ ATwinStickNPC::ATwinStickNPC()
 	GetCharacterMovement()->MaxWalkSpeed = 200.0f;
 	GetCharacterMovement()->MaxWalkSpeedCrouched = 100.0f;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 640.0f, 0.0f);
-	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->bOrientRotationToMovement = false;
 	GetCharacterMovement()->bUseRVOAvoidance = true;
 	GetCharacterMovement()->AvoidanceConsiderationRadius = 250.0f;
 	GetCharacterMovement()->AvoidanceWeight = 1.0f;

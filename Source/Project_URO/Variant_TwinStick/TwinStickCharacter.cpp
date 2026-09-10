@@ -16,6 +16,7 @@
 #include "Pooling/ActorPool.h"
 #include "AI/TwinStickNPC.h"
 #include "Pooling/PooledDecalActor.h"
+#include "Components/PrimitiveComponent.h"
 
 ATwinStickCharacter::ATwinStickCharacter()
 {
@@ -110,48 +111,24 @@ void ATwinStickCharacter::NotifyControllerChanged()
 	PlayerController = Cast<APlayerController>(GetController());
 }
 
-//void ATwinStickCharacter::Tick(float DeltaTime)
-//{
-//	Super::Tick(DeltaTime);
-//
-//	// In Third Person, we smoothly rotate to face the camera direction if shooting or aiming
-//	/*if ((bIsShooting || bAutoFireActive) && PlayerController)
-//	{
-//		FRotator ControlRot = GetControlRotation();
-//		ControlRot.Pitch = 0.0f;
-//		ControlRot.Roll = 0.0f;
-//		
-//		FRotator TargetRot = FMath::RInterpTo(GetActorRotation(), ControlRot, DeltaTime, AimRotationInterpSpeed);
-//		SetActorRotation(TargetRot);
-//	}*/
-//
-//}
-
 void ATwinStickCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Regla: El cuerpo rota hacia el mouse, pero interpolado para no verse rígido
 	if (PlayerController)
 	{
 		FVector MouseLocation, MouseDirection;
 		if (PlayerController->DeprojectMousePositionToWorld(MouseLocation, MouseDirection))
 		{
-			FVector TraceEnd = MouseLocation + (MouseDirection * 50000.0f);
-			FHitResult HitResult;
-			FCollisionQueryParams QueryParams;
-			QueryParams.AddIgnoredActor(this);
-
-			bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, MouseLocation, TraceEnd, ECC_Visibility, QueryParams);
-			FVector TargetPoint = bHit ? HitResult.ImpactPoint : TraceEnd;
+			// El cuerpo persigue el mismo punto infinito que las balas
+			FVector TargetPoint = MouseLocation + (MouseDirection * 50000.0f);
 
 			FVector LookDirection = TargetPoint - GetActorLocation();
-			LookDirection.Z = 0.0f; // Anular altura para que el personaje no se incline hacia el piso
+			LookDirection.Z = 0.0f;
 
 			if (!LookDirection.IsNearlyZero())
 			{
 				FRotator TargetRot = LookDirection.Rotation();
-				// RInterpTo suaviza el giro. Usa AimRotationInterpSpeed (valor default 10.0f)
 				FRotator SmoothRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, AimRotationInterpSpeed);
 				SetActorRotation(SmoothRot);
 			}
@@ -254,16 +231,18 @@ void ATwinStickCharacter::DoMove(float AxisX, float AxisY)
 		return;
 	}
 
-	// Anulamos la profundidad (AxisX en este Input) y conservamos el lateral (AxisY)
+	// Sumamos ambos ejes para capturar el input lateral sin importar el mapeo de teclas
+	float LateralInput = AxisX + AxisY;
+
 	LastMoveInput.X = 0.0f;
-	LastMoveInput.Y = AxisY;
+	LastMoveInput.Y = LateralInput;
 
 	FRotator FlatRot = GetControlRotation();
 	FlatRot.Pitch = 0.0f;
 	FlatRot.Roll = 0.0f;
 
-	// Aplicamos ÚNICAMENTE el input lateral (Strafe) usando AxisY
-	AddMovementInput(FlatRot.RotateVector(FVector::RightVector), AxisY);
+	// Aplicamos el input únicamente sobre el vector derecho (Strafe)
+	AddMovementInput(FlatRot.RotateVector(FVector::RightVector), LateralInput);
 }
 
 void ATwinStickCharacter::DoAim(float AxisX, float AxisY)
@@ -318,212 +297,95 @@ void ATwinStickCharacter::DoDash()
 
 void ATwinStickCharacter::DoShoot()
 {
-	// Regla Wild Guns: No se puede disparar si se está saltando
-	if (GetCharacterMovement()->IsFalling())
-	{
-		return;
-	}
+	if (!ProjectilePool) return;
+	if (GetCharacterMovement()->IsFalling()) return;
 
-	if (!ProjectilePool)
-	{
-		return;
-	}
-
-	// Enforce fire rate cooldown
 	float CurrentTime = GetWorld()->GetTimeSeconds();
-	float FireDelay = 0.22f;
-	if (CurrentWeaponMode == EWeaponMode::MachineGun)
-	{
-		FireDelay = 0.08f;
-	}
-	else if (CurrentWeaponMode == EWeaponMode::Laser)
-	{
-		FireDelay = 0.15f;
-	}
-
-	if (CurrentTime - LastFireTime < FireDelay)
-	{
-		return;
-	}
+	float FireDelay = (CurrentWeaponMode == EWeaponMode::MachineGun) ? 0.08f : (CurrentWeaponMode == EWeaponMode::Laser ? 0.15f : 0.22f);
+	if (CurrentTime - LastFireTime < FireDelay) return;
 	LastFireTime = CurrentTime;
-
-	//V1
-	
-	//// Obtenemos la posición inicial de la bala (offset desde el jugador)
-	//FTransform ProjectileTransform = GetActorTransform();
-	//FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset);
-	//ProjectileTransform.SetLocation(ProjectileLocation);
-
-	//// Regla Wild Guns (Opción A): Apuntar hacia la posición del Mouse en 3D
-	//if (PlayerController)
-	//{
-	//	FHitResult HitResult;
-	//	// Lanzamos un rayo invisible desde la pantalla hacia el mundo 3D
-	//	bool bHit = PlayerController->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-
-	//	if (bHit)
-	//	{
-	//		// Si el cursor toca el fondo/enemigo, calculamos el ángulo desde el jugador hacia ese punto
-	//		FRotator AimRotation = (HitResult.ImpactPoint - ProjectileLocation).Rotation();
-	//		ProjectileTransform.SetRotation(AimRotation.Quaternion());
-	//	}
-	//	else
-	//	{
-	//		// Si el cursor está en el cielo/fuera del nivel, disparamos recto por defecto
-	//		ProjectileTransform.SetRotation(GetActorRotation().Quaternion());
-	//	}
-	//}
-
-	// V2
-
-	//FTransform ProjectileTransform = GetActorTransform();
-	//FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset);
-	//ProjectileTransform.SetLocation(ProjectileLocation);
-
-	//// Apuntado Wild Guns: Rayo de cámara a fondo ignorando la espalda del jugador
-	//if (PlayerController)
-	//{
-	//	FVector MouseLocation, MouseDirection;
-	//	if (PlayerController->DeprojectMousePositionToWorld(MouseLocation, MouseDirection))
-	//	{
-	//		// Trazamos 500 metros hacia el fondo
-	//		FVector TraceEnd = MouseLocation + (MouseDirection * 50000.0f);
-	//		FHitResult HitResult;
-	//		FCollisionQueryParams QueryParams;
-	//		QueryParams.AddIgnoredActor(this); // Ignorar explícitamente al jugador
-
-	//		bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, MouseLocation, TraceEnd, ECC_Visibility, QueryParams);
-
-	//		if (bHit)
-	//		{
-	//			// Si toca una pared o enemigo, dispara hacia ese impacto
-	//			FRotator AimRotation = (HitResult.ImpactPoint - ProjectileLocation).Rotation();
-	//			ProjectileTransform.SetRotation(AimRotation.Quaternion());
-	//		}
-	//		else
-	//		{
-	//			// Si apuntas al cielo vacío, dispara en esa trayectoria
-	//			FRotator AimRotation = (TraceEnd - ProjectileLocation).Rotation();
-	//			ProjectileTransform.SetRotation(AimRotation.Quaternion());
-	//		}
-	//	}
-	//}
-
-	// 1. Calcular Muzzle: Agregamos 70.0f en el eje Z para subir el disparo del estómago al pecho/arma
-	FTransform ProjectileTransform = GetActorTransform();
-	FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset) + FVector(0.0f, 0.0f, 70.0f);
-	ProjectileTransform.SetLocation(ProjectileLocation);
-
-	// 2. Apuntado Wild Guns
+	// 1. Proyectar el objetivo a 500 metros en la dirección de la cámara (Crosshair)
+	FVector TargetPoint = GetActorLocation() + (GetActorForwardVector() * 50000.0f);
 	if (PlayerController)
 	{
 		FVector MouseLocation, MouseDirection;
 		if (PlayerController->DeprojectMousePositionToWorld(MouseLocation, MouseDirection))
 		{
-			// Trazamos el rayo desde la lente de la cámara hacia el fondo
-			FVector TraceStart = MouseLocation;
-			FVector TraceEnd = MouseLocation + (MouseDirection * 50000.0f);
-			FHitResult HitResult;
-			FCollisionQueryParams QueryParams;
-			QueryParams.AddIgnoredActor(this);
-
-			bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
-
-			// Si golpea algo, usamos ese punto. Si dispara al cielo, usamos el punto lejano.
-			FVector TargetPoint = bHit ? HitResult.ImpactPoint : TraceEnd;
-
-			// Rotación final de la bala
-			FRotator AimRotation = (TargetPoint - ProjectileLocation).Rotation();
-			ProjectileTransform.SetRotation(AimRotation.Quaternion());
+			TargetPoint = MouseLocation + (MouseDirection * 50000.0f);
 		}
 	}
 
+	// 2. SPAWN SEGURO: La bala siempre nace estrictamente hacia el frente del jugador (Como en el proyecto original)
+	FVector ChestLocation = GetActorLocation() + FVector(0.0f, 0.0f, 70.0f);
+	FVector ProjectileLocation = ChestLocation + (GetActorForwardVector() * 80.0f);
+
+	// 3. APUNTADO: Calculamos el ángulo desde esa posición segura hacia el punto del mouse
+	FVector TrueAimDirection = (TargetPoint - ProjectileLocation).GetSafeNormal();
+
+	FTransform ProjectileTransform = GetActorTransform();
+	ProjectileTransform.SetLocation(ProjectileLocation);
+	ProjectileTransform.SetRotation(TrueAimDirection.Rotation().Quaternion());
+
+	// 3. Disparo de Armas
 	if (CurrentWeaponMode == EWeaponMode::Laser)
 	{
-		// Raycast Laser shoot
 		FVector StartLocation = ProjectileLocation;
-		FVector Direction = ProjectileTransform.GetRotation().GetForwardVector();
-		FVector EndLocation = StartLocation + Direction * 2000.0f; // 2000 cm range
+		FVector EndLocation = StartLocation + TrueAimDirection * 2000.0f;
 
 		FHitResult HitResult;
 		FCollisionQueryParams TraceParams;
 		TraceParams.AddIgnoredActor(this);
 
-		bool bHit = GetWorld()->LineTraceSingleByChannel(
-			HitResult,
-			StartLocation,
-			EndLocation,
-			ECC_Visibility,
-			TraceParams
-		);
-
-		// Trigger Blueprint event for laser beam representation
+		bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility, TraceParams);
 		BP_OnLaserShot(StartLocation, bHit ? HitResult.ImpactPoint : EndLocation, bHit);
 
 		if (bHit)
 		{
-			if (!LaserDecalMaterial)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("TwinStickCharacter: LaserDecalMaterial no está asignado en el Blueprint."));
-			}
-
-			// If we hit an NPC, apply damage
 			if (ATwinStickNPC* NPC = Cast<ATwinStickNPC>(HitResult.GetActor()))
 			{
-				NPC->ProjectileImpact(Direction);
-			}
-
-			// Spawn impact decal from pool
-			if (ATwinStickGameMode* GM = Cast<ATwinStickGameMode>(GetWorld()->GetAuthGameMode()))
-			{
-				if (UActorPool* DecalPool = GM->GetDecalPool())
-				{
-					// Orient projection INTO the wall surface using (-HitResult.ImpactNormal)
-					FRotator DecalRotation = (-HitResult.ImpactNormal).Rotation();
-					DecalRotation.Roll = FMath::RandRange(0.0f, 360.0f);
-
-					AActor* PooledActor = DecalPool->GetActorFromPool(HitResult.ImpactPoint, DecalRotation);
-					if (APooledDecalActor* DecalActor = Cast<APooledDecalActor>(PooledActor))
-					{
-						DecalActor->OwningPool = DecalPool;
-						DecalActor->InitDecal(LaserDecalMaterial, LaserDecalSize, LaserDecalLifeSpan);
-					}
-				}
+				NPC->ProjectileImpact(TrueAimDirection);
 			}
 		}
-
 		WeaponAmmo--;
 	}
 	else if (CurrentWeaponMode == EWeaponMode::Shotgun)
 	{
-		// S-Gun: Disparo de perdigones con dispersión realista
-		FVector BaseDirection = ProjectileTransform.GetRotation().GetForwardVector();
-
-		// Cono de dispersión de 4 grados (lo mantiene cerrado hacia el objetivo)
 		float ConeHalfAngle = FMath::DegreesToRadians(4.0f);
-
-		// Disparamos 5 perdigones para mejorar el Gamefeel de la escopeta
 		for (int32 i = 0; i < 5; ++i)
 		{
-			// VRandCone calcula una trayectoria aleatoria dentro del ángulo asignado
-			FVector RandomDir = FMath::VRandCone(BaseDirection, ConeHalfAngle);
-
+			FVector RandomDir = FMath::VRandCone(TrueAimDirection, ConeHalfAngle);
 			AActor* PooledActor = ProjectilePool->GetActorFromPool(ProjectileLocation, RandomDir.Rotation());
+
 			if (ATwinStickProjectile* Projectile = Cast<ATwinStickProjectile>(PooledActor))
 			{
 				Projectile->OwningPool = ProjectilePool;
+				Projectile->SetOwner(this);
+				Projectile->SetInstigator(this);
+
+				// La bala ignora físicamente al jugador al moverse
+				if (UPrimitiveComponent* RootPrim = Cast<UPrimitiveComponent>(Projectile->GetRootComponent()))
+				{
+					RootPrim->IgnoreActorWhenMoving(this, true);
+				}
 			}
 		}
-
 		WeaponAmmo--;
 	}
 	else
 	{
-		// Standard or MachineGun: Single shot
+		// Standard y MachineGun
 		AActor* PooledActor = ProjectilePool->GetActorFromPool(ProjectileLocation, ProjectileTransform.Rotator());
 		if (ATwinStickProjectile* Projectile = Cast<ATwinStickProjectile>(PooledActor))
 		{
 			Projectile->OwningPool = ProjectilePool;
+			Projectile->SetOwner(this);
+			Projectile->SetInstigator(this);
+
+			// La bala ignora físicamente al jugador al moverse
+			if (UPrimitiveComponent* RootPrim = Cast<UPrimitiveComponent>(Projectile->GetRootComponent()))
+			{
+				RootPrim->IgnoreActorWhenMoving(this, true);
+			}
 		}
 
 		if (CurrentWeaponMode == EWeaponMode::MachineGun)
@@ -532,7 +394,6 @@ void ATwinStickCharacter::DoShoot()
 		}
 	}
 
-	// Return to Standard weapon if upgraded ammo is depleted
 	if (CurrentWeaponMode != EWeaponMode::Standard && WeaponAmmo <= 0)
 	{
 		CurrentWeaponMode = EWeaponMode::Standard;

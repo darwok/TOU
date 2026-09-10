@@ -41,32 +41,33 @@ void ATwinStickDesperadoNPC::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// REGLA WILD GUNS: El enemigo SIEMPRE te mira de frente, incluso al caminar de lado
+	if (TargetPlayer)
+	{
+		FVector DirectionToPlayer = TargetPlayer->GetActorLocation() - GetActorLocation();
+		DirectionToPlayer.Z = 0.0f; // Evitar que el modelo se incline hacia el piso
+
+		if (!DirectionToPlayer.IsNearlyZero())
+		{
+			// Interpolación suave para que gire naturalmente hacia la cámara
+			FRotator SmoothRot = FMath::RInterpTo(GetActorRotation(), DirectionToPlayer.Rotation(), DeltaTime, 8.0f);
+			SetActorRotation(SmoothRot);
+		}
+	}
+
+	// Lógica original del láser (solo se dibuja si está apuntando)
 	if (CurrentState == EDesperadoState::Aiming && TargetPlayer)
 	{
 		CurrentAimTime += DeltaTime;
-
-		// VInterpTo target: adds aiming lag so player can dodge-roll/dash out of lock-on path
 		AimTargetLocation = FMath::VInterpTo(AimTargetLocation, TargetPlayer->GetActorLocation(), DeltaTime, 4.0f);
 
-		// Force character to orient toward target while aiming
-		FVector DirectionToAim = AimTargetLocation - GetActorLocation();
-		DirectionToAim.Z = 0.0f;
-		if (!DirectionToAim.IsNearlyZero())
-		{
-			SetActorRotation(DirectionToAim.Rotation());
-		}
-
-		// Laser origin at chest height
 		FVector StartLocation = GetActorLocation() + GetActorForwardVector() * 60.0f + FVector(0.0f, 0.0f, 40.0f);
-
-		// Trigger visual updates
 		float AimPercent = FMath::Clamp(CurrentAimTime / AimDuration, 0.0f, 1.0f);
+
 		BP_OnLaserUpdate(StartLocation, AimTargetLocation, AimPercent);
 
-		// Render the aiming laser in C++ (Yellow -> Red color shift based on progress)
 		FColor LaserColor = FLinearColor::LerpUsingHSV(FLinearColor::Yellow, FLinearColor::Red, AimPercent).ToFColor(true);
-		float LaserThickness = 1.0f + (AimPercent * 3.0f); // laser thickens as lock-on completes
-		
+		float LaserThickness = 1.0f + (AimPercent * 3.0f);
 		DrawDebugLine(GetWorld(), StartLocation, AimTargetLocation, LaserColor, false, -1.0f, 0, LaserThickness);
 	}
 }
