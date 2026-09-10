@@ -110,20 +110,53 @@ void ATwinStickCharacter::NotifyControllerChanged()
 	PlayerController = Cast<APlayerController>(GetController());
 }
 
+//void ATwinStickCharacter::Tick(float DeltaTime)
+//{
+//	Super::Tick(DeltaTime);
+//
+//	// In Third Person, we smoothly rotate to face the camera direction if shooting or aiming
+//	/*if ((bIsShooting || bAutoFireActive) && PlayerController)
+//	{
+//		FRotator ControlRot = GetControlRotation();
+//		ControlRot.Pitch = 0.0f;
+//		ControlRot.Roll = 0.0f;
+//		
+//		FRotator TargetRot = FMath::RInterpTo(GetActorRotation(), ControlRot, DeltaTime, AimRotationInterpSpeed);
+//		SetActorRotation(TargetRot);
+//	}*/
+//
+//}
+
 void ATwinStickCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// In Third Person, we smoothly rotate to face the camera direction if shooting or aiming
-	/*if ((bIsShooting || bAutoFireActive) && PlayerController)
+	// Regla: El cuerpo rota hacia el mouse, pero interpolado para no verse rígido
+	if (PlayerController)
 	{
-		FRotator ControlRot = GetControlRotation();
-		ControlRot.Pitch = 0.0f;
-		ControlRot.Roll = 0.0f;
-		
-		FRotator TargetRot = FMath::RInterpTo(GetActorRotation(), ControlRot, DeltaTime, AimRotationInterpSpeed);
-		SetActorRotation(TargetRot);
-	}*/
+		FVector MouseLocation, MouseDirection;
+		if (PlayerController->DeprojectMousePositionToWorld(MouseLocation, MouseDirection))
+		{
+			FVector TraceEnd = MouseLocation + (MouseDirection * 50000.0f);
+			FHitResult HitResult;
+			FCollisionQueryParams QueryParams;
+			QueryParams.AddIgnoredActor(this);
+
+			bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, MouseLocation, TraceEnd, ECC_Visibility, QueryParams);
+			FVector TargetPoint = bHit ? HitResult.ImpactPoint : TraceEnd;
+
+			FVector LookDirection = TargetPoint - GetActorLocation();
+			LookDirection.Z = 0.0f; // Anular altura para que el personaje no se incline hacia el piso
+
+			if (!LookDirection.IsNearlyZero())
+			{
+				FRotator TargetRot = LookDirection.Rotation();
+				// RInterpTo suaviza el giro. Usa AimRotationInterpSpeed (valor default 10.0f)
+				FRotator SmoothRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, AimRotationInterpSpeed);
+				SetActorRotation(SmoothRot);
+			}
+		}
+	}
 }
 
 void ATwinStickCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -314,6 +347,8 @@ void ATwinStickCharacter::DoShoot()
 	}
 	LastFireTime = CurrentTime;
 
+	//V1
+	
 	//// Obtenemos la posición inicial de la bala (offset desde el jugador)
 	//FTransform ProjectileTransform = GetActorTransform();
 	//FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset);
@@ -338,36 +373,68 @@ void ATwinStickCharacter::DoShoot()
 	//		ProjectileTransform.SetRotation(GetActorRotation().Quaternion());
 	//	}
 	//}
+
+	// V2
+
+	//FTransform ProjectileTransform = GetActorTransform();
+	//FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset);
+	//ProjectileTransform.SetLocation(ProjectileLocation);
+
+	//// Apuntado Wild Guns: Rayo de cámara a fondo ignorando la espalda del jugador
+	//if (PlayerController)
+	//{
+	//	FVector MouseLocation, MouseDirection;
+	//	if (PlayerController->DeprojectMousePositionToWorld(MouseLocation, MouseDirection))
+	//	{
+	//		// Trazamos 500 metros hacia el fondo
+	//		FVector TraceEnd = MouseLocation + (MouseDirection * 50000.0f);
+	//		FHitResult HitResult;
+	//		FCollisionQueryParams QueryParams;
+	//		QueryParams.AddIgnoredActor(this); // Ignorar explícitamente al jugador
+
+	//		bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, MouseLocation, TraceEnd, ECC_Visibility, QueryParams);
+
+	//		if (bHit)
+	//		{
+	//			// Si toca una pared o enemigo, dispara hacia ese impacto
+	//			FRotator AimRotation = (HitResult.ImpactPoint - ProjectileLocation).Rotation();
+	//			ProjectileTransform.SetRotation(AimRotation.Quaternion());
+	//		}
+	//		else
+	//		{
+	//			// Si apuntas al cielo vacío, dispara en esa trayectoria
+	//			FRotator AimRotation = (TraceEnd - ProjectileLocation).Rotation();
+	//			ProjectileTransform.SetRotation(AimRotation.Quaternion());
+	//		}
+	//	}
+	//}
+
+	// 1. Calcular Muzzle: Agregamos 70.0f en el eje Z para subir el disparo del estómago al pecho/arma
 	FTransform ProjectileTransform = GetActorTransform();
-	FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset);
+	FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset) + FVector(0.0f, 0.0f, 70.0f);
 	ProjectileTransform.SetLocation(ProjectileLocation);
 
-	// Apuntado Wild Guns: Rayo de cámara a fondo ignorando la espalda del jugador
+	// 2. Apuntado Wild Guns
 	if (PlayerController)
 	{
 		FVector MouseLocation, MouseDirection;
 		if (PlayerController->DeprojectMousePositionToWorld(MouseLocation, MouseDirection))
 		{
-			// Trazamos 500 metros hacia el fondo
+			// Trazamos el rayo desde la lente de la cámara hacia el fondo
+			FVector TraceStart = MouseLocation;
 			FVector TraceEnd = MouseLocation + (MouseDirection * 50000.0f);
 			FHitResult HitResult;
 			FCollisionQueryParams QueryParams;
-			QueryParams.AddIgnoredActor(this); // Ignorar explícitamente al jugador
+			QueryParams.AddIgnoredActor(this);
 
-			bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, MouseLocation, TraceEnd, ECC_Visibility, QueryParams);
+			bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
 
-			if (bHit)
-			{
-				// Si toca una pared o enemigo, dispara hacia ese impacto
-				FRotator AimRotation = (HitResult.ImpactPoint - ProjectileLocation).Rotation();
-				ProjectileTransform.SetRotation(AimRotation.Quaternion());
-			}
-			else
-			{
-				// Si apuntas al cielo vacío, dispara en esa trayectoria
-				FRotator AimRotation = (TraceEnd - ProjectileLocation).Rotation();
-				ProjectileTransform.SetRotation(AimRotation.Quaternion());
-			}
+			// Si golpea algo, usamos ese punto. Si dispara al cielo, usamos el punto lejano.
+			FVector TargetPoint = bHit ? HitResult.ImpactPoint : TraceEnd;
+
+			// Rotación final de la bala
+			FRotator AimRotation = (TargetPoint - ProjectileLocation).Rotation();
+			ProjectileTransform.SetRotation(AimRotation.Quaternion());
 		}
 	}
 
