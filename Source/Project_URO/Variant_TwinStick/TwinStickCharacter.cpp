@@ -61,6 +61,8 @@ ATwinStickCharacter::ATwinStickCharacter()
 	GetCharacterMovement()->bConstrainToPlane = false;
 	GetCharacterMovement()->bSnapToPlaneAtStart = false;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
+	// Habilitar doble salto para mecánicas de evasión
+	JumpMaxCount = 2;
 }
 
 void ATwinStickCharacter::BeginPlay()
@@ -76,10 +78,17 @@ void ATwinStickCharacter::BeginPlay()
 	// update the items count
 	UpdateItems();
 
-	// Hide mouse cursor and capture input for 3rd person camera look controls
+	//// Hide mouse cursor and capture input for 3rd person camera look controls
+	//if (PlayerController)
+	//{
+	//	PlayerController->SetShowMouseCursor(false);
+	//	FInputModeGameOnly InputMode;
+	//	PlayerController->SetInputMode(InputMode);
+	//}
+	// Mostrar el cursor y permitir input mixto (Wild Guns)
 	if (PlayerController)
 	{
-		PlayerController->SetShowMouseCursor(false);
+		PlayerController->SetShowMouseCursor(true);
 		FInputModeGameOnly InputMode;
 		PlayerController->SetInputMode(InputMode);
 	}
@@ -106,7 +115,7 @@ void ATwinStickCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	// In Third Person, we smoothly rotate to face the camera direction if shooting or aiming
-	if ((bIsShooting || bAutoFireActive) && PlayerController)
+	/*if ((bIsShooting || bAutoFireActive) && PlayerController)
 	{
 		FRotator ControlRot = GetControlRotation();
 		ControlRot.Pitch = 0.0f;
@@ -114,7 +123,7 @@ void ATwinStickCharacter::Tick(float DeltaTime)
 		
 		FRotator TargetRot = FMath::RInterpTo(GetActorRotation(), ControlRot, DeltaTime, AimRotationInterpSpeed);
 		SetActorRotation(TargetRot);
-	}
+	}*/
 }
 
 void ATwinStickCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -131,7 +140,10 @@ void ATwinStickCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		EnhancedInputComponent->BindAction(DashAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::Dash);
 		EnhancedInputComponent->BindAction(ShootAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::Shoot);
 		EnhancedInputComponent->BindAction(ShootAction, ETriggerEvent::Completed, this, &ATwinStickCharacter::EndShoot);
+		EnhancedInputComponent->BindAction(ShootAction, ETriggerEvent::Canceled, this, &ATwinStickCharacter::EndShoot);
 		EnhancedInputComponent->BindAction(AoEAction, ETriggerEvent::Triggered, this, &ATwinStickCharacter::AoEAttack);
+		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 
 		if (LassoAction)
 		{
@@ -203,19 +215,21 @@ void ATwinStickCharacter::AoEAttack(const FInputActionValue& Value)
 
 void ATwinStickCharacter::DoMove(float AxisX, float AxisY)
 {
-	// save the input
-	LastMoveInput.X = AxisX;
+	// Regla Wild Guns: No se puede mover mientras se dispara
+	if (bIsShooting)
+	{
+		return;
+	}
+
+	// Anulamos la profundidad (AxisX en este Input) y conservamos el lateral (AxisY)
+	LastMoveInput.X = 0.0f;
 	LastMoveInput.Y = AxisY;
 
-	// calculate the forward component of the input
 	FRotator FlatRot = GetControlRotation();
 	FlatRot.Pitch = 0.0f;
 	FlatRot.Roll = 0.0f;
 
-	// apply the forward input
-	AddMovementInput(FlatRot.RotateVector(FVector::ForwardVector), AxisX);
-
-	// apply the right input
+	// Aplicamos ÚNICAMENTE el input lateral (Strafe) usando AxisY
 	AddMovementInput(FlatRot.RotateVector(FVector::RightVector), AxisY);
 }
 
@@ -227,7 +241,7 @@ void ATwinStickCharacter::DoAim(float AxisX, float AxisY)
 	// hide the mouse cursor
 	if (PlayerController)
 	{
-		PlayerController->SetShowMouseCursor(false);
+		/*PlayerController->SetShowMouseCursor(false);*/
 	}
 
 	// are we on autofire cooldown?
@@ -271,6 +285,12 @@ void ATwinStickCharacter::DoDash()
 
 void ATwinStickCharacter::DoShoot()
 {
+	// Regla Wild Guns: No se puede disparar si se está saltando
+	if (GetCharacterMovement()->IsFalling())
+	{
+		return;
+	}
+
 	if (!ProjectilePool)
 	{
 		return;
@@ -294,21 +314,62 @@ void ATwinStickCharacter::DoShoot()
 	}
 	LastFireTime = CurrentTime;
 
-	// In Third Person, rotate the character to match the camera/controller yaw before shooting
+	//// Obtenemos la posición inicial de la bala (offset desde el jugador)
+	//FTransform ProjectileTransform = GetActorTransform();
+	//FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset);
+	//ProjectileTransform.SetLocation(ProjectileLocation);
+
+	//// Regla Wild Guns (Opción A): Apuntar hacia la posición del Mouse en 3D
+	//if (PlayerController)
+	//{
+	//	FHitResult HitResult;
+	//	// Lanzamos un rayo invisible desde la pantalla hacia el mundo 3D
+	//	bool bHit = PlayerController->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+
+	//	if (bHit)
+	//	{
+	//		// Si el cursor toca el fondo/enemigo, calculamos el ángulo desde el jugador hacia ese punto
+	//		FRotator AimRotation = (HitResult.ImpactPoint - ProjectileLocation).Rotation();
+	//		ProjectileTransform.SetRotation(AimRotation.Quaternion());
+	//	}
+	//	else
+	//	{
+	//		// Si el cursor está en el cielo/fuera del nivel, disparamos recto por defecto
+	//		ProjectileTransform.SetRotation(GetActorRotation().Quaternion());
+	//	}
+	//}
+	FTransform ProjectileTransform = GetActorTransform();
+	FVector ProjectileLocation = ProjectileTransform.GetLocation() + (GetActorForwardVector() * ProjectileOffset);
+	ProjectileTransform.SetLocation(ProjectileLocation);
+
+	// Apuntado Wild Guns: Rayo de cámara a fondo ignorando la espalda del jugador
 	if (PlayerController)
 	{
-		FRotator ControlRot = GetControlRotation();
-		ControlRot.Pitch = 0.0f;
-		ControlRot.Roll = 0.0f;
-		SetActorRotation(ControlRot);
+		FVector MouseLocation, MouseDirection;
+		if (PlayerController->DeprojectMousePositionToWorld(MouseLocation, MouseDirection))
+		{
+			// Trazamos 500 metros hacia el fondo
+			FVector TraceEnd = MouseLocation + (MouseDirection * 50000.0f);
+			FHitResult HitResult;
+			FCollisionQueryParams QueryParams;
+			QueryParams.AddIgnoredActor(this); // Ignorar explícitamente al jugador
+
+			bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, MouseLocation, TraceEnd, ECC_Visibility, QueryParams);
+
+			if (bHit)
+			{
+				// Si toca una pared o enemigo, dispara hacia ese impacto
+				FRotator AimRotation = (HitResult.ImpactPoint - ProjectileLocation).Rotation();
+				ProjectileTransform.SetRotation(AimRotation.Quaternion());
+			}
+			else
+			{
+				// Si apuntas al cielo vacío, dispara en esa trayectoria
+				FRotator AimRotation = (TraceEnd - ProjectileLocation).Rotation();
+				ProjectileTransform.SetRotation(AimRotation.Quaternion());
+			}
+		}
 	}
-
-	// get the actor transform
-	FTransform ProjectileTransform = GetActorTransform();
-
-	// apply the projectile spawn offset
-	FVector ProjectileLocation = ProjectileTransform.GetLocation() + ProjectileTransform.GetRotation().RotateVector(FVector::ForwardVector * ProjectileOffset);
-	ProjectileTransform.SetLocation(ProjectileLocation);
 
 	if (CurrentWeaponMode == EWeaponMode::Laser)
 	{
@@ -437,21 +498,31 @@ void ATwinStickCharacter::DoAoEAttack()
 
 void ATwinStickCharacter::HandleDamage(float Damage, const FVector& DamageDirection)
 {
-	// Ignore damage if player is currently dashing (Dodge Roll)
+	// Si está haciendo Dash (esquivando), es invulnerable
 	if (bIsDashing)
 	{
 		return;
 	}
 
-	// calculate the knockback vector
-	FVector LaunchVector = DamageDirection;
-	LaunchVector.Z = 0.0f;
+	// Regla Wild Guns: 1 golpe quita exactamente 1 vida completa (1 HP)
+	Lives--;
 
-	// apply knockback to the character
-	LaunchCharacter(LaunchVector * KnockbackStrength, true, true);
+	if (Lives > 0)
+	{
+		// Aún hay vidas: Aplicar knockback para dar feedback
+		FVector LaunchVector = DamageDirection;
+		LaunchVector.Z = 0.0f;
+		LaunchCharacter(LaunchVector * KnockbackStrength, true, true);
 
-	// pass control to BP
-	BP_Damaged();
+		// Disparamos los eventos visuales hacia los Blueprints / HUD
+		BP_Damaged();
+		BP_OnLifeLost(Lives);
+	}
+	else
+	{
+		// Vidas en 0: El jugador ha sido derrotado
+		BP_OnGameOver();
+	}
 }
 
 void ATwinStickCharacter::AddPickup()

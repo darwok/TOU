@@ -49,6 +49,10 @@ class ATwinStickCharacter : public ACharacter
 
 protected:
 
+	/** Jump input action */
+	UPROPERTY(EditAnywhere, Category = "Input")
+	UInputAction* JumpAction;
+
 	/** Movement input action */
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* MoveAction;
@@ -238,6 +242,18 @@ public:
 	/** Handles dash inputs from both input actions and touch interface */
 	UFUNCTION(BlueprintCallable, Category="Input")
 	void DoDash();
+
+	// --- Wild Guns Health System ---
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Health")
+	int32 Lives = 3;
+
+	/** Evento que le avisa al HUD que reste un ícono de vida y cambie la cara del avatar */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Health")
+	void BP_OnLifeLost(int32 RemainingLives);
+
+	/** Evento que detona la pantalla de Game Over */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Health")
+	void BP_OnGameOver();
 
 	/** Handles shoot inputs from both input actions and touch interface */
 	UFUNCTION(BlueprintCallable, Category="Input")
