@@ -316,8 +316,8 @@ void ATwinStickCharacter::DoShoot()
 	}
 
 	// 2. SPAWN SEGURO: La bala siempre nace estrictamente hacia el frente del jugador (Como en el proyecto original)
-	FVector ChestLocation = GetActorLocation() + FVector(0.0f, 0.0f, 70.0f);
-	FVector ProjectileLocation = ChestLocation + (GetActorForwardVector() * 80.0f);
+	FVector ChestLocation = GetActorLocation() + FVector(0.0f, 0.0f, 80.0f);
+	FVector ProjectileLocation = ChestLocation + (GetActorForwardVector() * 100.0f);
 
 	// 3. APUNTADO: Calculamos el ángulo desde esa posición segura hacia el punto del mouse
 	FVector TrueAimDirection = (TargetPoint - ProjectileLocation).GetSafeNormal();
