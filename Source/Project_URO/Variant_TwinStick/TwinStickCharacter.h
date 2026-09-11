@@ -103,7 +103,7 @@ protected:
 
 	/** Type of AoE attack actor to spawn */
 	UPROPERTY(EditAnywhere, Category="AoE")
-	TSubclassOf<ATwinStickAoEAttack> AoEAttackClass;
+	TSubclassOf<class AActor> AoEAttackClass;
 
 	/** Number of starting AoE attack items */
 	UPROPERTY(EditAnywhere, Category="AoE")

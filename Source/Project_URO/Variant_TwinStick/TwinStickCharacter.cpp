@@ -414,8 +414,27 @@ void ATwinStickCharacter::DoAoEAttack()
 			// save the new AoE time
 			LastAoETime = GameTime;
 
-			// spawn the AoE
-			ATwinStickAoEAttack* AoE = GetWorld()->SpawnActor<ATwinStickAoEAttack>(AoEAttackClass, GetActorTransform());
+			// --- NUEVA LÓGICA DE LANZAMIENTO ---
+
+			// 1. Obtener la ubicación inicial (con un offset hacia adelante para que no choque contigo)
+			FVector SpawnLocation = GetActorLocation() + (GetActorForwardVector() * 100.0f);
+
+			// 2. Calcular hacia dónde apunta el mouse
+			FRotator SpawnRotation = GetActorRotation(); // Rotación por defecto por si falla el mouse
+
+			if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			{
+				FHitResult HitResult;
+				if (PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
+				{
+					// Crear una rotación que mire desde el jugador hacia el cursor
+					FVector Direction = HitResult.Location - SpawnLocation;
+					SpawnRotation = Direction.Rotation();
+				}
+			}
+
+			// spawn the AoE (Ahora usa la nueva ubicación y rotación calculadas)
+			AActor* AoE = GetWorld()->SpawnActor<AActor>(AoEAttackClass, SpawnLocation, SpawnRotation);
 
 			// decrease the number of items
 			--Items;

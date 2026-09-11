@@ -74,6 +74,7 @@ protected:
 public:
 
 	/** Tells the NPC to process a projectile impact */
+	UFUNCTION(BlueprintCallable, Category = "Combat")
 	virtual void ProjectileImpact(const FVector& ForwardVector);
 
 	/** Stun status flag */
